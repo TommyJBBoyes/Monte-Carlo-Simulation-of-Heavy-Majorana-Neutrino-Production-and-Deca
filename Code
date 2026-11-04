@@ -1,0 +1,178 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+# ============================================
+# Particle masses (GeV)
+# ============================================
+
+M_DELTA = 150.0
+M_N = 40.0
+M_LEPTON = 0.105
+M_JET = 0.0
+
+N_EVENTS = 5000
+
+# ============================================
+# Four Vector Class
+# ============================================
+
+class FourVector:
+
+    def __init__(self, E, px, py, pz):
+        self.E = E
+        self.px = px
+        self.py = py
+        self.pz = pz
+
+    def spatial(self):
+        return np.array([self.px, self.py, self.pz])
+
+    def mass(self):
+        m2 = self.E**2 - self.px**2 - self.py**2 - self.pz**2
+        return np.sqrt(max(m2, 0))
+
+    def pt(self):
+        return np.sqrt(self.px**2 + self.py**2)
+
+    def eta(self):
+        p = np.linalg.norm(self.spatial())
+        if p == abs(self.pz):
+            return 0
+        return 0.5*np.log((p+self.pz)/(p-self.pz))
+
+    def phi(self):
+        return np.arctan2(self.py, self.px)
+
+    def __add__(self, other):
+        return FourVector(
+            self.E+other.E,
+            self.px+other.px,
+            self.py+other.py,
+            self.pz+other.pz
+        )
+
+# ============================================
+# Lorentz Boost
+# ============================================
+
+def boost(v, beta):
+
+    b2 = np.dot(beta, beta)
+
+    if b2 == 0:
+        return v
+
+    gamma = 1/np.sqrt(1-b2)
+
+    bp = np.dot(beta, v.spatial())
+
+    gamma2 = (gamma-1)/b2
+
+    px = v.px + gamma2*bp*beta[0] + gamma*beta[0]*v.E
+    py = v.py + gamma2*bp*beta[1] + gamma*beta[1]*v.E
+    pz = v.pz + gamma2*bp*beta[2] + gamma*beta[2]*v.E
+
+    E = gamma*(v.E + bp)
+
+    return FourVector(E, px, py, pz)
+
+# ============================================
+# Isotropic Two Body Decay
+# ============================================
+
+def two_body_decay(M, m1, m2):
+
+    p = np.sqrt(
+        (M**2-(m1+m2)**2)*
+        (M**2-(m1-m2)**2)
+    )/(2*M)
+
+    costheta = np.random.uniform(-1,1)
+    sintheta = np.sqrt(1-costheta**2)
+    phi = np.random.uniform(0,2*np.pi)
+
+    px = p*sintheta*np.cos(phi)
+    py = p*sintheta*np.sin(phi)
+    pz = p*costheta
+
+    E1 = np.sqrt(p**2+m1**2)
+    E2 = np.sqrt(p**2+m2**2)
+
+    p1 = FourVector(E1, px, py, pz)
+    p2 = FourVector(E2,-px,-py,-pz)
+
+    return p1,p2
+
+# ============================================
+# Simplified N -> l + jet + jet
+# (Approximated as N -> l + X)
+# ============================================
+
+def neutrino_decay(parent):
+
+    m_hadronic = 10
+
+    lep, had = two_body_decay(
+        M_N,
+        M_LEPTON,
+        m_hadronic
+    )
+
+    beta = parent.spatial()/parent.E
+
+    lep = boost(lep,beta)
+    had = boost(had,beta)
+
+    return lep,had
+
+# ============================================
+# Event Generation
+# ============================================
+
+lepton_pts = []
+lepton_eta = []
+inv_mass = []
+
+for i in range(N_EVENTS):
+
+    # Delta at rest
+    N1,N2 = two_body_decay(M_DELTA,M_N,M_N)
+
+    l1,h1 = neutrino_decay(N1)
+    l2,h2 = neutrino_decay(N2)
+
+    lepton_pts.append(l1.pt())
+    lepton_pts.append(l2.pt())
+
+    lepton_eta.append(l1.eta())
+    lepton_eta.append(l2.eta())
+
+    inv = (l1+h1).mass()
+    inv_mass.append(inv)
+
+# ============================================
+# Plotting
+# ============================================
+
+plt.figure(figsize=(6,4))
+plt.hist(lepton_pts,bins=40)
+plt.xlabel("Lepton $p_T$ (GeV)")
+plt.ylabel("Events")
+plt.title("Lepton Transverse Momentum")
+plt.tight_layout()
+
+plt.figure(figsize=(6,4))
+plt.hist(lepton_eta,bins=40)
+plt.xlabel("Lepton η")
+plt.ylabel("Events")
+plt.title("Lepton Pseudorapidity")
+plt.tight_layout()
+
+plt.figure(figsize=(6,4))
+plt.hist(inv_mass,bins=40)
+plt.xlabel("Invariant Mass (l + hadronic)")
+plt.ylabel("Events")
+plt.title("Reconstructed Heavy Neutrino Mass")
+plt.tight_layout()
+
+plt.show()
